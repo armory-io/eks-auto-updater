@@ -27,9 +27,6 @@ func main() {
 	if len(*clusterName) == 0 {
 		log.Fatal("Invalid cluster name!  Must be set!")
 	}
-	if len(*nodegroupName) == 0 {
-		log.Fatal("Invalid nodegroup name!  Must be set!")
-	}
 
 	// Load the Shared AWS Configuration (~/.aws/config)
 	ctx := context.TODO()
@@ -39,11 +36,26 @@ func main() {
 	}
 	client := eks.NewFromConfig(cfg)
 
-	log.Println("INFO: Starting updates...")
 	clusterInformation, _ := client.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: clusterName})
-	updateError := updateClusterNodeGroup(client, ctx, clusterName, nodegroupName, waitTimeForNodeUpdates)
-	if updateError != nil {
-		log.Fatal("ERROR: Unable to update cluster node group... ", updateError)
+	if len(*nodegroupName) == 0 {
+		// Lookup and update the node groups...
+		nodeGroups, nodeGroupListErr := client.ListNodegroups(ctx, &eks.ListNodegroupsInput{ClusterName: clusterName})
+		if nodeGroupListErr != nil {
+			log.Fatal("ERROR: Unable to list node groups... ", nodeGroupListErr)
+		}
+		for _, nodeGroup := range nodeGroups.Nodegroups {
+			log.Println("INFO: Starting updates of node group " + nodeGroup)
+			updateError := updateClusterNodeGroup(client, ctx, clusterName, &nodeGroup, waitTimeForNodeUpdates)
+			if updateError != nil {
+				log.Fatal("ERROR: Unable to update cluster node group... ", updateError)
+			}
+		}
+	} else {
+		log.Println("INFO: Starting updates of node group " + *nodegroupName)
+		updateError := updateClusterNodeGroup(client, ctx, clusterName, nodegroupName, waitTimeForNodeUpdates)
+		if updateError != nil {
+			log.Fatal("ERROR: Unable to update cluster node group... ", updateError)
+		}
 	}
 	for _, addon := range addonsToUpdate {
 		updateAddon(client, ctx, clusterName, &addon, clusterInformation.Cluster.Version)
