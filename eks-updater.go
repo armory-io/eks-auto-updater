@@ -51,7 +51,7 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 	if err != nil {
 		log.Println("ERROR:  Failure getting addon versions ", err)
 	}
-
+	// Find the default version.  TECHNICALLY this is a paginated call, so need to long term add support for that.
 	var defaultVersion = ""
 	for _, addon := range versions.Addons {
 		for _, addonVersion := range addon.AddonVersions {
@@ -63,7 +63,7 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 		}
 	}
 	if len(defaultVersion) == 0 {
-		log.Println("ERROR: Failed to find valid addon for " + *addonName)
+		log.Println("WARN: Failed to find valid addon for " + *addonName + " ... skipping updates of the addon!")
 		// Should we return err instead of exiting?
 		return
 	}
