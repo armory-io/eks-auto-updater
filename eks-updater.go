@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	utils "eks-updater/utilities"
 	"flag"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
@@ -19,11 +18,18 @@ import (
 */
 func main() {
 
-	clusterName := utils.ValidateOrExit("cluster-name", "Cluster name REQUIRED")
+	clusterName := flag.String("cluster-name", "", "Cluster name REQUIRED")
 	//TODO: LOOK UP managed node groups instead of parameters... enhancement for later.  AND update multiple node groups sequentially would be a later thing
-	nodegroupName := utils.ValidateOrExit("nodegroup-name", "Node group name to update REQUIRED")
+	nodegroupName := flag.String("nodegroup-name", "", "Node group name to update REQUIRED")
 	waitTimeForNodeUpdates := *flag.Int("nodegroup-wait-time", 120, "Time in minutes to wait for node group update to complete.  Defaults to 120 minutes")
 	addonsToUpdate := strings.Split(*flag.String("addons-to-update", "kube-proxy,coredns,vpc-cni,aws-ebs-csi-driver", "Comma separated list of adds on to updates.  Defaults to kube-proxy, coredns, vpc-cni, aws-ebs-csi-driver addons"), ",")
+	flag.Parse()
+	if len(*clusterName) == 0 {
+		log.Fatal("Invalid cluster name!  Must be set!")
+	}
+	if len(*nodegroupName) == 0 {
+		log.Fatal("Invalid nodegroup name!  Must be set!")
+	}
 
 	// Load the Shared AWS Configuration (~/.aws/config)
 	ctx := context.TODO()
@@ -67,14 +73,14 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 		// Should we return err instead of exiting?
 		return
 	}
-	//NOMINALLY we should check if there's a service account/config and apply that FIRST :)
+	//NOMINALLY we should check if there's a service account/config and apply that here not just default to node settinsg :)
 	response, err := client.UpdateAddon(ctx, &eks.UpdateAddonInput{
 		AddonName:        addonName,
 		ClusterName:      clusterName,
 		AddonVersion:     &defaultVersion,
 		ResolveConflicts: "OVERWRITE",
 	})
-	log.Println("INFO: Updating addon " + *addonName + " id of update is:" + *response.Update.Id + " ... waiting for completion!")
+	log.Println("INFO: Updating addon " + *addonName + " to " + defaultVersion + ".   Id of update is:" + *response.Update.Id + " ... waiting for completion!")
 	waiter := eks.NewAddonActiveWaiter(client)
 	waitErr := waiter.Wait(ctx, &eks.DescribeAddonInput{
 		AddonName:   addonName,
