@@ -1,3 +1,3 @@
 FROM alpine:3.17
-COPY . /opt/eks-updater
-WORKDIR /opt/eks-updater
+COPY eks-auto-updater /opt/eks-auto-updater/bin/eks-auto-updater
+WORKDIR /opt/eks-auto-updater
