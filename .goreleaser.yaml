@@ -41,24 +41,45 @@ changelog:
       - '^docs:'
       - '^test:'
 dockers:
+## standard AMIs e.g. eks m5.2xlarae types
   - image_templates:
-      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-amd64"
+      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-amd64"
     use: buildx
-    dockerfile: Dockerfile
+    goos: linux
     build_flag_templates:
       - "--platform=linux/amd64"
+## This is graviton2 in AWS like mg5g.2xlarge types
   - image_templates:
-      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-arm64v8"
+      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-arm64v8"
     use: buildx
     goarch: arm64
-    dockerfile: Dockerfile
+    goos: linux
     build_flag_templates:
       - "--platform=linux/arm64/v8"
+## UNLIKELY to be used much in docker vs. a CLI... bu... standard intel mac
+#  - image_templates:
+#      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-darwin-amd64"
+#    use: buildx
+#    goos: darwin
+#    build_flag_templates:
+#      - "--platform=darwin/amd64"
+#  ## UNLIKELY to be used much in docker vs. a CLI... bu... standard m1/m2 macs
+#  - image_templates:
+#      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-darwin-arm64"
+#    use: buildx
+#    goarch: arm64
+#    goos: darwin
+#    build_flag_templates:
+#      - "--platform=darwin/arm64"
+
 docker_manifests:
   - name_template: "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}"
     image_templates:
-      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-amd64"
-      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-arm64v8"
+#      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-darwin-amd64"
+#      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-darwin-arm64"
+      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-amd64"
+      - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-arm64v8"
+
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
