@@ -28,6 +28,7 @@ func main() {
 	//TODO: LOOK UP managed node groups instead of parameters... enhancement for later.  AND update multiple node groups sequentially would be a later thing
 	nodegroupName := flag.String("nodegroup-name", "", "Node group name to update REQUIRED")
 	roleArn := flag.String("role-arn", "", "Role to assume if set")
+	region := flag.String("region", "us-west-2", "Region to operate in - defaults to us-west-2")
 	waitTimeForNodeUpdates := *flag.Int("nodegroup-wait-time", 120, "Time in minutes to wait for node group update to complete.  Defaults to 120 minutes")
 	addonsToUpdate := strings.Split(*flag.String("addons-to-update", "kube-proxy,coredns,vpc-cni,aws-ebs-csi-driver", "Comma separated list of adds on to updates.  Defaults to kube-proxy, coredns, vpc-cni, aws-ebs-csi-driver addons"), ",")
 	flag.Parse()
@@ -40,7 +41,7 @@ func main() {
 
 	// Load the Shared AWS Configuration (~/.aws/config)
 	ctx := context.TODO()
-	client := getEksClient(ctx, *roleArn)
+	client := getEksClient(ctx, *region, *roleArn)
 	log.Println("INFO: Starting updates...")
 	clusterInformation, _ := client.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: clusterName})
 	updateError := updateClusterNodeGroup(client, ctx, clusterName, nodegroupName, waitTimeForNodeUpdates)
@@ -109,11 +110,11 @@ func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName
 	return nil
 }
 
-func getEksClient(ctx context.Context, roleArn string) *eks.Client {
+func getEksClient(ctx context.Context, region string, roleArn string) *eks.Client {
 
 	var cfg aws.Config
 	var err error
-	cfg, err = config.LoadDefaultConfig(ctx)
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
 
 	if err != nil {
 		log.Fatal("ERROR: Unable to auth/get connected to AWS", err)
