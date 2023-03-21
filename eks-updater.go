@@ -3,9 +3,15 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	_ "github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"log"
+	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,6 +27,8 @@ func main() {
 	clusterName := flag.String("cluster-name", "", "Cluster name REQUIRED")
 	//TODO: LOOK UP managed node groups instead of parameters... enhancement for later.  AND update multiple node groups sequentially would be a later thing
 	nodegroupName := flag.String("nodegroup-name", "", "Node group name to update REQUIRED")
+	roleArn := flag.String("role-arn", "", "Role to assume if set")
+	region := flag.String("region", "us-west-2", "Region to operate in - defaults to us-west-2")
 	waitTimeForNodeUpdates := *flag.Int("nodegroup-wait-time", 120, "Time in minutes to wait for node group update to complete.  Defaults to 120 minutes")
 	addonsToUpdate := strings.Split(*flag.String("addons-to-update", "kube-proxy,coredns,vpc-cni,aws-ebs-csi-driver", "Comma separated list of adds on to updates.  Defaults to kube-proxy, coredns, vpc-cni, aws-ebs-csi-driver addons"), ",")
 	flag.Parse()
@@ -30,12 +38,12 @@ func main() {
 
 	// Load the Shared AWS Configuration (~/.aws/config)
 	ctx := context.TODO()
-	cfg, err := config.LoadDefaultConfig(ctx)
+	client, err := getEksClient(ctx, *region, *roleArn)
 	if err != nil {
-		log.Fatal("ERROR: Unable to auth/get connected to AWS", err)
+		log.Fatal("Unable to get EKS client:", err)
 	}
-	client := eks.NewFromConfig(cfg)
 
+	log.Println("INFO: Starting updates...")
 	clusterInformation, _ := client.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: clusterName})
 	if len(*nodegroupName) == 0 {
 		// Lookup and update the node groups...
@@ -117,4 +125,41 @@ func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName
 		return waitErr
 	}
 	return nil
+}
+
+func getEksClient(ctx context.Context, region string, roleArn string) (client *eks.Client, err error) {
+
+	var cfg aws.Config
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+
+	if err != nil {
+		return client, err
+	}
+	if len(roleArn) == 0 {
+		return eks.NewFromConfig(cfg), err
+	}
+	log.Println("INFO: Assuming role ARN " + roleArn)
+	// Create config & sts client with source account
+
+	sourceAccount := sts.NewFromConfig(cfg)
+	// Default and only support 1 hour duration.  We MAY hit an issue here particularly if node groups take a LONG time to update.
+	duration := int32(3600)
+	// Assume target role and store credentials
+	rand.Seed(time.Now().UnixNano())
+	response, err := sourceAccount.AssumeRole(ctx, &sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleArn),
+		RoleSessionName: aws.String("eks-auto-updater-" + strconv.Itoa(10000+rand.Intn(25000))),
+		DurationSeconds: &duration,
+	})
+	if err != nil {
+		return client, err
+	}
+	var assumedRoleCreds = response.Credentials
+
+	// Create config with target service client, using assumed role
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(*assumedRoleCreds.AccessKeyId, *assumedRoleCreds.SecretAccessKey, *assumedRoleCreds.SessionToken)))
+	if err != nil {
+		return client, err
+	}
+	return eks.NewFromConfig(cfg), err
 }
