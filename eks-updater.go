@@ -109,13 +109,11 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 	}
 	currentVersion, err := version.NewVersion(*addonInfo.Addon.AddonVersion)
 	if err != nil {
-		log.Println("Unable to parse version correctly for addon " + *addonName + " version of " + *addonInfo.Addon.AddonVersion)
-		return err
+		return fmt.Errorf("ERROR: Unable to parse version correctly for addon "+*addonName+" version of "+*addonInfo.Addon.AddonVersion+", %w", err)
 	}
 	newVersion, err := version.NewVersion(defaultVersion)
 	if err != nil {
-		log.Println("Unable to parse version correctly for addon " + *addonName + " version of " + defaultVersion)
-		return err
+		return fmt.Errorf("ERROR: Unable to parse version correctly for addon "+*addonName+" version of "+defaultVersion+", %w", err)
 	}
 	if newVersion.Compare(currentVersion) < 0 {
 		log.Println("WARNING: Skipping addon " + *addonName + " as the version to upgrade to is older/equal to the version installed!")
@@ -143,8 +141,7 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName *string, nodegroupName *string, waitForNodeUpdates int) (err error) {
 	version, err := client.UpdateNodegroupVersion(ctx, &eks.UpdateNodegroupVersionInput{ClusterName: clusterName, NodegroupName: nodegroupName})
 	if err != nil {
-		log.Println("ERROR: Update call failed", err)
-		return err
+		return fmt.Errorf("ERROR: Update call failed %w", err)
 	}
 	log.Println("INFO: Upgrade job started... " + *version.Update.Id)
 	waiter := eks.NewNodegroupActiveWaiter(client)
@@ -152,7 +149,7 @@ func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName
 	if err != nil {
 		return fmt.Errorf("ERROR: Update failed to complete in the allotted time: %w", err)
 	}
-	return err
+	return nil
 }
 
 func getEksClient(ctx context.Context, region string, roleArn string) (client *eks.Client, err error) {
