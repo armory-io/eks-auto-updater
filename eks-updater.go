@@ -157,7 +157,7 @@ func getEksClient(ctx context.Context, region string, roleArn string) (client *e
 	var assumedRoleCreds = response.Credentials
 
 	// Create config with target service client, using assumed role
-	cfg, err = config.LoadDefaultConfig(ctx, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(*assumedRoleCreds.AccessKeyId, *assumedRoleCreds.SecretAccessKey, *assumedRoleCreds.SessionToken)))
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(*assumedRoleCreds.AccessKeyId, *assumedRoleCreds.SecretAccessKey, *assumedRoleCreds.SessionToken)), config.WithRegion(region))
 	if err != nil {
 		return client, err
 	}
