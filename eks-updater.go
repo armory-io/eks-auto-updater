@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	_ "github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/hashicorp/go-version"
 	"log"
 	"math/rand"
 	"strconv"
@@ -60,22 +62,34 @@ func main() {
 		}
 	} else {
 		log.Println("INFO: Starting updates of node group " + *nodegroupName)
-		updateError := updateClusterNodeGroup(client, ctx, clusterName, nodegroupName, waitTimeForNodeUpdates)
-		if updateError != nil {
-			log.Fatal("ERROR: Unable to update cluster node group... ", updateError)
+		err = updateClusterNodeGroup(client, ctx, clusterName, nodegroupName, waitTimeForNodeUpdates)
+		if err != nil {
+			log.Fatal("ERROR: Unable to update cluster node group... ", err)
 		}
 	}
 	for _, addon := range addonsToUpdate {
-		updateAddon(client, ctx, clusterName, &addon, clusterInformation.Cluster.Version)
+		err = updateAddon(client, ctx, clusterName, &addon, clusterInformation.Cluster.Version)
+		if err != nil {
+			log.Fatal("Unable to update addon "+addon, err)
+		}
+
 	}
 	log.Println("INFO:  Updates complete!")
 
 }
 
-func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, addonName *string, k8sVersion *string) {
+func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, addonName *string, k8sVersion *string) (err error) {
+
+	addonInfo, err := client.DescribeAddon(ctx, &eks.DescribeAddonInput{AddonName: addonName, ClusterName: clusterName})
+	if err != nil {
+		log.Println("WARN:  Error describing addon " + *addonName + " in the cluster... is it actually in the cluster? Skipping...")
+		return nil
+	}
+
 	versions, err := client.DescribeAddonVersions(ctx, &eks.DescribeAddonVersionsInput{AddonName: addonName, KubernetesVersion: k8sVersion})
 	if err != nil {
 		log.Println("ERROR:  Failure getting addon versions ", err)
+		return err
 	}
 	// Find the default version.  TECHNICALLY this is a paginated call, so need to long term add support for that.
 	var defaultVersion = ""
@@ -91,8 +105,21 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 	if len(defaultVersion) == 0 {
 		log.Println("WARN: Failed to find valid addon for " + *addonName + " ... skipping updates of the addon!")
 		// Should we return err instead of exiting?
-		return
+		return nil
 	}
+	currentVersion, err := version.NewVersion(*addonInfo.Addon.AddonVersion)
+	if err != nil {
+		return fmt.Errorf("ERROR: Unable to parse version correctly for addon "+*addonName+" version of "+*addonInfo.Addon.AddonVersion+", %w", err)
+	}
+	newVersion, err := version.NewVersion(defaultVersion)
+	if err != nil {
+		return fmt.Errorf("ERROR: Unable to parse version correctly for addon "+*addonName+" version of "+defaultVersion+", %w", err)
+	}
+	if newVersion.Compare(currentVersion) < 0 {
+		log.Println("WARNING: Skipping addon " + *addonName + " as the version to upgrade to is older/equal to the version installed!")
+		return nil
+	}
+	log.Println("INFO: Updating addon " + *addonName + " from: " + *addonInfo.Addon.AddonVersion + " to:" + defaultVersion)
 	//NOMINALLY we should check if there's a service account/config and apply that here not just default to node settinsg :)
 	response, err := client.UpdateAddon(ctx, &eks.UpdateAddonInput{
 		AddonName:        addonName,
@@ -100,29 +127,27 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 		AddonVersion:     &defaultVersion,
 		ResolveConflicts: "OVERWRITE",
 	})
-	log.Println("INFO: Updating addon " + *addonName + " to " + defaultVersion + ".   Id of update is:" + *response.Update.Id + " ... waiting for completion!")
-	waiter := eks.NewAddonActiveWaiter(client)
-	waitErr := waiter.Wait(ctx, &eks.DescribeAddonInput{
+	if err != nil {
+		return err
+	}
+	log.Println("INFO: Addon update triggered ... ID of  " + *response.Update.Id + "... waiting for completion")
+	err = eks.NewAddonActiveWaiter(client).Wait(ctx, &eks.DescribeAddonInput{
 		AddonName:   addonName,
 		ClusterName: clusterName,
 	}, time.Duration(20)*time.Minute)
-	if waitErr != nil {
-		log.Println("ERROR: Failure on addon update in the time allowed!", waitErr)
-	}
+	return err
 }
 
-func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName *string, nodegroupName *string, waitForNodeUpdates int) error {
+func updateClusterNodeGroup(client *eks.Client, ctx context.Context, clusterName *string, nodegroupName *string, waitForNodeUpdates int) (err error) {
 	version, err := client.UpdateNodegroupVersion(ctx, &eks.UpdateNodegroupVersionInput{ClusterName: clusterName, NodegroupName: nodegroupName})
 	if err != nil {
-		log.Println("ERROR: Update call failed", err)
-		return err
+		return fmt.Errorf("ERROR: Update call failed %w", err)
 	}
 	log.Println("INFO: Upgrade job started... " + *version.Update.Id)
 	waiter := eks.NewNodegroupActiveWaiter(client)
-	waitErr := waiter.Wait(ctx, &eks.DescribeNodegroupInput{ClusterName: clusterName, NodegroupName: nodegroupName}, time.Duration(waitForNodeUpdates)*time.Minute)
-	if waitErr != nil {
-		log.Println("ERROR: Update failed to complete in the allotted time", err)
-		return waitErr
+	err = waiter.Wait(ctx, &eks.DescribeNodegroupInput{ClusterName: clusterName, NodegroupName: nodegroupName}, time.Duration(waitForNodeUpdates)*time.Minute)
+	if err != nil {
+		return fmt.Errorf("ERROR: Update failed to complete in the allotted time: %w", err)
 	}
 	return nil
 }
