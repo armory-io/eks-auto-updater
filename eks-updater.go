@@ -4,6 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
+	"math/rand"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -11,18 +17,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/hashicorp/go-version"
-	"log"
-	"math/rand"
-	"strconv"
-	"strings"
-	"time"
 )
 
 /*
-	LONG TERM goals:
-	Update CLUSTER VERSION as well.   E.g. this can update the whole shebang saving a lot of time/headache.  We can validate things beforehand LIKE
-		- Make sure there are PDBs on resources like spinnaker first
-		- Verify nodes are on an n-1 release version first.  AND update nodes post upgrade kinda things
+LONG TERM goals:
+Update CLUSTER VERSION as well.   E.g. this can update the whole shebang saving a lot of time/headache.  We can validate things beforehand LIKE
+  - Make sure there are PDBs on resources like spinnaker first
+  - Verify nodes are on an n-1 release version first.  AND update nodes post upgrade kinda things
 */
 func main() {
 
@@ -96,7 +97,7 @@ func updateAddon(client *eks.Client, ctx context.Context, clusterName *string, a
 	for _, addon := range versions.Addons {
 		for _, addonVersion := range addon.AddonVersions {
 			for _, capability := range addonVersion.Compatibilities {
-				if capability.DefaultVersion == true {
+				if capability.DefaultVersion {
 					defaultVersion = *addonVersion.AddonVersion
 				}
 			}
