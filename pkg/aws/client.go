@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/armory-io/eks-auto-updater/pkg/aws/eks"
 	"github.com/armory-io/eks-auto-updater/pkg/aws/options"
@@ -38,7 +39,10 @@ func NewClient(ctx context.Context, opts ...options.Option) (Client, error) {
 
 	if len(AWSRoleArn) != 0 {
 		stsClient := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(stsClient, AWSRoleArn)
+		provider := stscreds.NewAssumeRoleProvider(stsClient, AWSRoleArn, func(o *stscreds.AssumeRoleOptions) {
+			o.RoleSessionName = "eks-auto-updater"
+			o.Duration = time.Duration(60) * time.Minute
+		})
 		cfg.Credentials = aws.NewCredentialsCache(provider)
 
 		log.Println("INFO: Assuming role ARN " + AWSRoleArn)
