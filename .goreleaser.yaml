@@ -28,27 +28,27 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     # use zip for windows archives
     format_overrides:
-    - goos: windows
-      format: zip
+      - goos: windows
+        format: zip
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - "^docs:"
+      - "^test:"
 dockers:
-## standard AMIs e.g. eks m5.2xlarae types
+  ## standard AMIs e.g. eks m5.2xlarae types
   - image_templates:
       - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-amd64"
     use: buildx
     goos: linux
     build_flag_templates:
       - "--platform=linux/amd64"
-## This is graviton2 in AWS like mg5g.2xlarge types
+  ## This is graviton2 in AWS like mg5g.2xlarge types
   - image_templates:
       - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-arm64v8"
     use: buildx
@@ -62,7 +62,6 @@ docker_manifests:
     image_templates:
       - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-amd64"
       - "ghcr.io/armory-io/eks-auto-updater:{{ .Version }}-linux-arm64v8"
-
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
