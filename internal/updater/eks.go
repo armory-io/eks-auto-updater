@@ -2,7 +2,6 @@ package updater
 
 import (
 	"context"
-	"sync"
 
 	"github.com/armory-io/eks-auto-updater/pkg/aws/eks"
 )
@@ -28,9 +27,7 @@ func (u EKSUpdater) UpdateClusterNodeGroup(ctx context.Context, clusterName *str
 }
 
 // UpdateAddon updates the addon of a cluster to the latest version
-func (u EKSUpdater) UpdateAddon(ctx context.Context, clusterName *string, addonName *string, wg *sync.WaitGroup) (err error) {
-	defer wg.Done()
-
+func (u EKSUpdater) UpdateAddon(ctx context.Context, clusterName *string, addonName *string) (err error) {
 	err = u.client.UpdateAddon(ctx, clusterName, addonName)
 	if err != nil {
 		return err
