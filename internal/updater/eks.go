@@ -4,21 +4,36 @@ import (
 	"context"
 
 	"github.com/armory-io/eks-auto-updater/pkg/aws/eks"
+	"github.com/armory-io/eks-auto-updater/pkg/aws/ssm"
 )
 
 type EKSUpdater struct {
-	client eks.Interface
+	eksClient eks.Interface
+	ssmClient ssm.Interface
 }
 
-func NewEKSUpdater(client eks.Interface) *EKSUpdater {
+func NewEKSUpdater(eksClient eks.Interface, ssmClient ssm.Interface) *EKSUpdater {
 	return &EKSUpdater{
-		client: client,
+		eksClient: eksClient,
+		ssmClient: ssmClient,
 	}
 }
 
 // UpdateClusterNodeGroup updates the nodegroup of a cluster to the latest version
-func (u EKSUpdater) UpdateClusterNodeGroup(ctx context.Context, clusterName *string, nodegroupName *string, waitForNodeUpdates int) error {
-	err := u.client.UpdateNodegroupVersion(ctx, clusterName, nodegroupName, waitForNodeUpdates)
+func (u EKSUpdater) UpdateClusterNodeGroup(ctx context.Context, clusterName, nodegroupName *string, waitForNodeUpdates int) error {
+	// Retrieve the latest AMI release version from SSM parameter store (managed by AWS)
+	// and use this information to determine if the update is successful
+	version, err := u.eksClient.GetClusterVersion(ctx, clusterName)
+	if err != nil {
+		return err
+	}
+	latestVersion, err := u.ssmClient.GetLatestAMIReleaseVersion(ctx, &version, clusterName)
+	if err != nil {
+		return err
+	}
+
+	// Update the nodegroup to the latest version
+	err = u.eksClient.UpdateNodegroupVersion(ctx, clusterName, nodegroupName, &latestVersion, waitForNodeUpdates)
 	if err != nil {
 		return err
 	}
@@ -28,7 +43,7 @@ func (u EKSUpdater) UpdateClusterNodeGroup(ctx context.Context, clusterName *str
 
 // UpdateAddon updates the addon of a cluster to the latest version
 func (u EKSUpdater) UpdateAddon(ctx context.Context, clusterName *string, addonName *string) (err error) {
-	err = u.client.UpdateAddon(ctx, clusterName, addonName)
+	err = u.eksClient.UpdateAddon(ctx, clusterName, addonName)
 	if err != nil {
 		return err
 	}

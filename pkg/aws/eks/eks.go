@@ -15,13 +15,16 @@ import (
 type Interface interface {
 	// UpdateNodegroupVersion checks if a nodegroup is in an updatable state and
 	// triggers an update if it is, then waits for the update to complete
-	UpdateNodegroupVersion(ctx context.Context, clusterName *string, nodegroupName *string, maxWaitDur int) error
+	UpdateNodegroupVersion(ctx context.Context, clusterName, nodegroupName, latestReleaseVersion *string, maxWaitDur int) error
 
 	// UpdateAddon updates the addon of a cluster to the latest version
-	UpdateAddon(ctx context.Context, clusterName *string, addonName *string) error
+	UpdateAddon(ctx context.Context, clusterName, addonName *string) error
 
 	// GetAddonsList returns a list of addons in a cluster
 	GetAddonsList(ctx context.Context, clusterName *string) ([]string, error)
+
+	// GetClusterVersion returns the kubernetes version of a cluster
+	GetClusterVersion(ctx context.Context, clusterName *string) (string, error)
 }
 
 type Client struct {
@@ -35,7 +38,7 @@ func NewFromConfig(cfg aws.Config) (Interface, error) {
 	return c, nil
 }
 
-func (c Client) UpdateNodegroupVersion(ctx context.Context, clusterName *string, nodegroupName *string, maxWaitDur int) error {
+func (c Client) UpdateNodegroupVersion(ctx context.Context, clusterName, nodegroupName, latestReleaseVersion *string, maxWaitDur int) error {
 	// Check if there is an update in progress
 	status, err := c.getNodeGroupStatus(ctx, clusterName, nodegroupName)
 	if err != nil {
@@ -48,7 +51,7 @@ func (c Client) UpdateNodegroupVersion(ctx context.Context, clusterName *string,
 	} else if status == types.NodegroupStatusActive {
 		// If it's active, trigger an update
 		log.Println("INFO: Nodegroup is active. Triggering update...")
-		jobID, err := c.updateNodegroupVersion(ctx, clusterName, nodegroupName)
+		jobID, err := c.updateNodegroupVersion(ctx, clusterName, nodegroupName, latestReleaseVersion)
 		if err != nil {
 			return err
 		}
@@ -58,7 +61,7 @@ func (c Client) UpdateNodegroupVersion(ctx context.Context, clusterName *string,
 	}
 
 	// Wait for the update to complete
-	err = c.nodegroupUpdateWaiter(ctx, clusterName, nodegroupName, maxWaitDur)
+	err = c.nodegroupUpdateWaiter(ctx, clusterName, nodegroupName, latestReleaseVersion, maxWaitDur)
 	if err != nil {
 		return err
 	}
@@ -78,16 +81,32 @@ func (c Client) getNodeGroupStatus(ctx context.Context, clusterName *string, nod
 		return "", fmt.Errorf("ERROR: Unable to describe nodegroup: %w", err)
 	}
 
+	fmt.Printf("version: %s\n", *currentNodeGroup.Nodegroup.ReleaseVersion)
+
 	return currentNodeGroup.Nodegroup.Status, nil
+}
+
+// getNodeGroupReleaseVersion returns the release version of a nodegroup
+func (c Client) getNodeGroupReleaseVersion(ctx context.Context, clusterName, nodegroupName *string) (string, error) {
+	currentNodeGroup, err := c.eks.DescribeNodegroup(ctx, &eks.DescribeNodegroupInput{
+		ClusterName:   clusterName,
+		NodegroupName: nodegroupName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("ERROR: Unable to describe nodegroup: %w", err)
+	}
+
+	return *currentNodeGroup.Nodegroup.ReleaseVersion, nil
 }
 
 // updateNodegroupVersion updates the nodegroup of a cluster to the latest version
 // and returns the ID of the update job
-func (c Client) updateNodegroupVersion(ctx context.Context, clusterName *string, nodegroupName *string) (string, error) {
+func (c Client) updateNodegroupVersion(ctx context.Context, clusterName, nodegroupName, latestReleaseVersion *string) (string, error) {
 	// Trigger an update
 	version, err := c.eks.UpdateNodegroupVersion(ctx, &eks.UpdateNodegroupVersionInput{
-		ClusterName:   clusterName,
-		NodegroupName: nodegroupName,
+		ClusterName:    clusterName,
+		NodegroupName:  nodegroupName,
+		ReleaseVersion: latestReleaseVersion,
 	})
 	if err != nil {
 		return "", fmt.Errorf("ERROR: Update call failed %w", err)
@@ -97,7 +116,8 @@ func (c Client) updateNodegroupVersion(ctx context.Context, clusterName *string,
 }
 
 // nodegroupUpdateWaiter waits for the nodegroup of a cluster to finish updating
-func (c Client) nodegroupUpdateWaiter(ctx context.Context, clusterName *string, nodegroupName *string, maxWaitDur int) error {
+// and determines if the update was successful.
+func (c Client) nodegroupUpdateWaiter(ctx context.Context, clusterName, nodegroupName, latestReleaseVersion *string, maxWaitDur int) error {
 	waiter := eks.NewNodegroupActiveWaiter(c.eks)
 	err := waiter.Wait(ctx, &eks.DescribeNodegroupInput{
 		ClusterName:   clusterName,
@@ -109,10 +129,19 @@ func (c Client) nodegroupUpdateWaiter(ctx context.Context, clusterName *string, 
 		return fmt.Errorf("ERROR: Update failed to complete in the allotted time: %w", err)
 	}
 
+	// After the update is complete, check if the version is correct
+	currentVersion, err := c.getNodeGroupReleaseVersion(ctx, clusterName, nodegroupName)
+	if err != nil {
+		return err
+	}
+	if currentVersion != *latestReleaseVersion {
+		return fmt.Errorf("ERROR: Update failed. Expected version %s, got %s", *latestReleaseVersion, currentVersion)
+	}
+
 	return nil
 }
 
-func (c Client) getClusterVersion(ctx context.Context, clusterName *string) (string, error) {
+func (c Client) GetClusterVersion(ctx context.Context, clusterName *string) (string, error) {
 	clusterInfo, err := c.eks.DescribeCluster(ctx, &eks.DescribeClusterInput{
 		Name: clusterName,
 	})
@@ -143,7 +172,7 @@ func (c Client) UpdateAddon(ctx context.Context, clusterName *string, addonName 
 		return fmt.Errorf("ERROR: Unable to describe addon "+*addonName+" in the cluster: %w", err)
 	}
 
-	k8sVersion, err := c.getClusterVersion(ctx, clusterName)
+	k8sVersion, err := c.GetClusterVersion(ctx, clusterName)
 	if err != nil {
 		return err
 	}

@@ -36,7 +36,7 @@ var addonsCmd = &cobra.Command{
 		var wg sync.WaitGroup
 		errChan := make(chan error)
 
-		updater := updater.NewEKSUpdater(awsClient.EKS())
+		updater := updater.NewEKSUpdater(awsClient.EKS(), awsClient.SSM())
 		for _, addon := range addonsList {
 			wg.Add(1)
 
