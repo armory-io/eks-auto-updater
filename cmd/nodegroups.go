@@ -29,7 +29,7 @@ var nodegroupsCmd = &cobra.Command{
 			return err
 		}
 
-		updater := updater.NewEKSUpdater(awsClient.EKS())
+		updater := updater.NewEKSUpdater(awsClient.EKS(), awsClient.SSM())
 		err = updater.UpdateClusterNodeGroup(ctx, &clusterName, &nodegroupName, waitForNodeUpdates)
 		if err != nil {
 			return err

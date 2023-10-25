@@ -2,11 +2,11 @@ package aws
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/armory-io/eks-auto-updater/pkg/aws/eks"
 	"github.com/armory-io/eks-auto-updater/pkg/aws/options"
+	"github.com/armory-io/eks-auto-updater/pkg/aws/ssm"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -16,10 +16,12 @@ import (
 
 type Client interface {
 	EKS() eks.Interface
+	SSM() ssm.Interface
 }
 
 type client struct {
 	eks  eks.Interface
+	ssm  ssm.Interface
 	opts options.Options
 }
 
@@ -44,11 +46,13 @@ func NewClient(ctx context.Context, opts ...options.Option) (Client, error) {
 			o.Duration = time.Duration(60) * time.Minute
 		})
 		cfg.Credentials = aws.NewCredentialsCache(provider)
-
-		log.Println("INFO: Assuming role ARN " + AWSRoleArn)
 	}
 
 	if c.eks, err = eks.NewFromConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	if c.ssm, err = ssm.NewFromConfig(cfg, c.eks); err != nil {
 		return nil, err
 	}
 
@@ -57,4 +61,8 @@ func NewClient(ctx context.Context, opts ...options.Option) (Client, error) {
 
 func (c *client) EKS() eks.Interface {
 	return c.eks
+}
+
+func (c *client) SSM() ssm.Interface {
+	return c.ssm
 }

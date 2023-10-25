@@ -35,27 +35,29 @@ var addonsCmd = &cobra.Command{
 
 		var wg sync.WaitGroup
 		errChan := make(chan error)
-		defer close(errChan)
 
-		updater := updater.NewEKSUpdater(awsClient.EKS())
+		updater := updater.NewEKSUpdater(awsClient.EKS(), awsClient.SSM())
 		for _, addon := range addonsList {
 			wg.Add(1)
 
-			go func(addon string) {
-				errChan <- updater.UpdateAddon(ctx, &clusterName, &addon, &wg)
-			}(addon)
+			go func(addon string, wg *sync.WaitGroup) {
+				defer wg.Done()
+
+				errChan <- updater.UpdateAddon(ctx, &clusterName, &addon)
+			}(addon, &wg)
 		}
 
-		var errResult error
 		go func() {
-			for err := range errChan {
-				if err != nil {
-					errResult = errors.Join(errResult, err)
-				}
-			}
+			wg.Wait()
+			close(errChan)
 		}()
 
-		wg.Wait()
+		var errResult error
+		for err := range errChan {
+			if err != nil {
+				errResult = errors.Join(errResult, err)
+			}
+		}
 
 		// Return all of the errors that were sent to the errChan channel
 		if errResult != nil {
